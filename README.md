@@ -1,9 +1,8 @@
-
 # 🌦️ Real-Time Weather Data Engineering & Quality Monitoring Pipeline
 
 An end-to-end data engineering project that automatically collects weather data from multiple Indian cities, validates incoming records, stores structured data in PostgreSQL, and monitors pipeline execution and data quality through an interactive Streamlit dashboard.
 
-The pipeline integrates API-based data ingestion, data transformation, validation, database loading, automated scheduling, and real-time monitoring to demonstrate a practical data engineering workflow.
+The pipeline integrates API-based data ingestion, data transformation, validation, database loading, automated scheduling, and monitoring to demonstrate a practical data engineering workflow.
 
 ## 🎯 Project Objective
 
@@ -15,8 +14,6 @@ To build a reliable and automated weather data pipeline that:
 - Stores rejected records for monitoring and analysis.
 - Tracks pipeline execution performance and data quality.
 - Displays weather insights and pipeline health through a Streamlit dashboard.
-
-
 
 ## 🛠️ Technology Stack
 
@@ -42,32 +39,33 @@ To build a reliable and automated weather data pipeline that:
 - **Duplicate Prevention:** Uses database constraints and conflict handling to avoid duplicate city observations.
 - **PostgreSQL Storage:** Stores weather observations, rejected records, and pipeline execution history.
 - **Pipeline Monitoring:** Tracks execution status, duration, extracted records, inserted records, and quality scores.
-- **Interactive Dashboard:** Displays live weather conditions, historical analytics, rejected records, and pipeline health.
+- **Interactive Dashboard:** Displays weather conditions, historical analytics, rejected records, and pipeline health.
 - **Logging and Error Handling:** Records pipeline activities and errors for troubleshooting.
 - **Automated Startup:** Uses Windows Task Scheduler to start the pipeline after Windows sign-in.
-
-
 
 ## 📊 Dashboard Preview
 
 The Streamlit dashboard provides a centralized view of weather conditions, data quality, and pipeline execution performance.
 
 ### 1. Pipeline Health
+
 ![Pipeline Health](screenshots/pipeline_health.png)
 
 ### 2. Live Weather Conditions
+
 ![Live Weather Conditions](screenshots/live_weather.png)
 
 ### 3. Historical Weather Analytics
+
 ![Historical Weather Analytics](screenshots/historical_analytics.png)
 
 ### 4. Data Quality Monitoring
+
 ![Data Quality Monitoring](screenshots/data_quality_monitoring.png)
 
 ### 5. Data Quality Score Trend
+
 ![Data Quality Score Trend](screenshots/data_quality_score_trend.png)
-
-
 
 ## 🚀 Installation & Setup
 
@@ -83,8 +81,9 @@ Make sure you have installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
-cd real-time-data-engineering-pipeline
+git clone https://github.com/uthrathirulok/real-time-weather-data-engineering-pipeline.git
+
+cd real-time-weather-data-engineering-pipeline
 ```
 
 ### 2. Create a Virtual Environment
@@ -105,7 +104,53 @@ Activate it on Windows PowerShell:
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment Variables
+### Database Setup
+
+This project uses PostgreSQL to store weather observations, rejected records, and pipeline execution history.
+
+**1. Create the database**
+
+Open pgAdmin 4 and create a database named:
+
+```sql
+weather_pipeline
+```
+
+**2. Create the database tables**
+
+1. Select the `weather_pipeline` database in pgAdmin.
+2. Open Tools → Query Tool.
+3. Open the project's `sql/schema.sql` file.
+4. Execute the SQL script.
+
+The script creates the following tables:
+
+- `weather_records` – stores validated weather observations.
+- `rejected_weather_records` – stores records rejected during data validation.
+- `pipeline_runs` – tracks pipeline execution status and performance.
+
+**Note:** The schema uses `CREATE TABLE IF NOT EXISTS`, so it does not modify tables that already exist.
+
+
+### 4. Configure PostgreSQL
+
+Make sure PostgreSQL is running.
+
+Create a database named:
+
+```text
+weather_pipeline
+```
+
+The application expects the following three tables to exist in this database:
+
+- `weather_records`
+- `rejected_weather_records`
+- `pipeline_runs`
+
+Create the tables using the schema described in the Database Design section below before running the pipeline.
+
+### 5. Configure Environment Variables
 
 Create a `.env` file in the project root directory.
 
@@ -123,7 +168,7 @@ Replace the password placeholder with your own local PostgreSQL password.
 
 **Important:** Never upload your `.env` file or database password to GitHub.
 
-### 5. Run the Pipeline
+### 6. Run the Pipeline
 
 Execute a single pipeline run:
 
@@ -131,7 +176,9 @@ Execute a single pipeline run:
 python main.py
 ```
 
-### 6. Launch the Streamlit Dashboard
+The pipeline extracts weather data, validates records, loads valid and rejected records into PostgreSQL, and records execution details.
+
+### 7. Launch the Streamlit Dashboard
 
 ```bash
 python -m streamlit run dashboard/app.py
@@ -139,15 +186,13 @@ python -m streamlit run dashboard/app.py
 
 Open the local dashboard URL displayed in your terminal.
 
-### 7. Start Automated Scheduling
+### 8. Start Automated Scheduling
 
 ```bash
 python scheduler.py
 ```
 
 The scheduler executes the pipeline immediately on startup and then runs it every 15 minutes.
-
-
 
 ## 🏗️ System Architecture
 
@@ -179,14 +224,12 @@ flowchart TD
 ### 🔄 Data Pipeline Workflow
 
 1. **Extraction:** Fetch weather observations from the Open-Meteo API for five Indian cities.
-2. **Transformation:** Convert the extracted data into structured Pandas DataFrames.
+2. **Transformation:** Convert extracted data into structured Pandas DataFrames.
 3. **Validation:** Check records for data quality issues and separate valid and rejected records.
 4. **Loading:** Store valid weather observations and rejected records in PostgreSQL.
 5. **Monitoring:** Record execution status, duration, record counts, and data quality scores.
 6. **Visualization:** Present weather information and pipeline performance through Streamlit.
 7. **Scheduling:** APScheduler automatically triggers pipeline executions every 15 minutes.
-
-
 
 ## 🗄️ Database Design
 
@@ -217,6 +260,22 @@ Stores validated weather observations collected from the five cities.
 
 Stores weather records that fail data quality validation, along with their rejection reasons.
 
+| Column | Description |
+|---|---|
+| id | Unique rejected record identifier |
+| city | City name |
+| latitude | Geographic latitude |
+| longitude | Geographic longitude |
+| observation_time | Weather observation timestamp |
+| temperature_2m | Temperature at 2 metres |
+| relative_humidity_2m | Relative humidity |
+| apparent_temperature | Feels-like temperature |
+| precipitation | Precipitation measurement |
+| weather_code | Weather condition code |
+| wind_speed_10m | Wind speed at 10 metres |
+| rejection_reason | Reason the record failed validation |
+| rejected_at | Rejection timestamp |
+
 ### 3. pipeline_runs
 
 Maintains pipeline execution history and performance metrics.
@@ -235,8 +294,6 @@ Maintains pipeline execution history and performance metrics.
 | status | SUCCESS or FAILED |
 | error_message | Execution error details, if any |
 | created_at | Monitoring record creation timestamp |
-
-
 
 ## 📈 Sample SQL Analytics
 
@@ -304,25 +361,30 @@ GROUP BY rejection_reason
 ORDER BY total_rejected DESC;
 ```
 
-
 ## 🧪 Testing & Reliability
 
 The project uses automated testing with Pytest to verify important pipeline functionality.
 
 ### Testing Coverage
 
-- Data extraction and API response handling.
+The automated test suite covers:
+
+- Data extraction and API retry handling.
+- Handling API failures after retry attempts.
 - Data transformation and validation.
-- Separation of valid and rejected records.
-- Database loading and duplicate prevention.
-- Pipeline monitoring and execution tracking.
+- Acceptance of valid weather records.
+- Rejection of invalid and missing measurements.
+- Duplicate record removal.
+- Database loading of valid records.
+- Handling empty DataFrames.
+- Database loading error handling.
 
 ### Run Tests
 
 Activate your virtual environment and execute:
 
 ```bash
-pytest -v
+python -m pytest -v
 ```
 
 ### Reliability Features
@@ -335,10 +397,9 @@ pytest -v
 - Data quality score calculation.
 - Scheduled execution with APScheduler.
 
-
 ### Latest Test Results
 
-All 9 automated tests passed successfully.
+The latest recorded automated test execution completed successfully.
 
 | Metric | Result |
 |---|---:|
@@ -353,23 +414,18 @@ Test execution command:
 python -m pytest -v
 ```
 
-<escape>**Test Status:** All tests passed successfully.</escape>
-
-
+**Test Status:** All 9 automated tests passed successfully in the recorded run.
 
 ## 📁 Project Structure
 
 ```text
-
-
-real-time-data-engineering-pipeline/
+real-time-weather-data-engineering-pipeline/
 │
 ├── config/
 │   └── config.py
 │
 ├── dashboard/
-│   ├── app.py
-│   └── app - Copy.py  (local backup; not for GitHub)
+│   └── app.py
 │
 ├── src/
 │   ├── __init__.py
@@ -384,7 +440,6 @@ real-time-data-engineering-pipeline/
 ├── tests/
 │   ├── test_extract_retries.py
 │   ├── test_load.py
-│   ├── test_rejected_record.py
 │   └── test_transform.py
 │
 ├── screenshots/
@@ -394,15 +449,21 @@ real-time-data-engineering-pipeline/
 │   ├── data_quality_monitoring.png
 │   └── data_quality_score_trend.png
 │
-├── data/
-├── logs/
-├── sql/
 ├── main.py
 ├── scheduler.py
+├── simulate_rejected_record.py
 ├── run_scheduler.bat
 ├── requirements.txt
 ├── .gitignore
 └── README.md
-
-
 ```
+
+---
+
+## 👩‍💻 Author
+
+**Uthra Thirulogasundar**
+
+GitHub: [uthrathirulok](https://github.com/uthrathirulok)
+
+Project Repository: [Real-Time Weather Data Engineering & Quality Monitoring Pipeline](https://github.com/uthrathirulok/real-time-weather-data-engineering-pipeline)
