@@ -71,7 +71,7 @@ The Streamlit dashboard provides a centralized view of weather conditions, data 
 
 ### Prerequisites
 
-Make sure you have installed:
+Make sure the following tools are installed:
 
 - Python 3.9 or later
 - PostgreSQL
@@ -86,13 +86,13 @@ git clone https://github.com/uthrathirulok/real-time-weather-data-engineering-pi
 cd real-time-weather-data-engineering-pipeline
 ```
 
-### 2. Create a Virtual Environment
+### 2. Create and Activate a Virtual Environment
 
 ```bash
 python -m venv venv
 ```
 
-Activate it on Windows PowerShell:
+For Windows PowerShell:
 
 ```powershell
 .\venv\Scripts\Activate.ps1
@@ -104,51 +104,20 @@ Activate it on Windows PowerShell:
 pip install -r requirements.txt
 ```
 
-### Database Setup
+### 4. Set Up the PostgreSQL Database
 
-This project uses PostgreSQL to store weather observations, rejected records, and pipeline execution history.
+1. Make sure PostgreSQL is running.
+2. Open pgAdmin 4.
+3. Create a database named `weather_pipeline`.
+4. Select the database and open Tools → Query Tool.
+5. Open the project's `sql/schema.sql` file.
+6. Execute the SQL script.
 
-**1. Create the database**
-
-Open pgAdmin 4 and create a database named:
-
-```sql
-weather_pipeline
-```
-
-**2. Create the database tables**
-
-1. Select the `weather_pipeline` database in pgAdmin.
-2. Open Tools → Query Tool.
-3. Open the project's `sql/schema.sql` file.
-4. Execute the SQL script.
-
-The script creates the following tables:
+The script creates three tables:
 
 - `weather_records` – stores validated weather observations.
-- `rejected_weather_records` – stores records rejected during data validation.
-- `pipeline_runs` – tracks pipeline execution status and performance.
-
-**Note:** The schema uses `CREATE TABLE IF NOT EXISTS`, so it does not modify tables that already exist.
-
-
-### 4. Configure PostgreSQL
-
-Make sure PostgreSQL is running.
-
-Create a database named:
-
-```text
-weather_pipeline
-```
-
-The application expects the following three tables to exist in this database:
-
-- `weather_records`
-- `rejected_weather_records`
-- `pipeline_runs`
-
-Create the tables using the schema described in the Database Design section below before running the pipeline.
+- `rejected_weather_records` – stores rejected records and their reasons.
+- `pipeline_runs` – stores pipeline execution history and monitoring metrics.
 
 ### 5. Configure Environment Variables
 
@@ -164,13 +133,13 @@ DB_USER=postgres
 DB_PASSWORD=your_postgresql_password
 ```
 
-Replace the password placeholder with your own local PostgreSQL password.
+Replace the password placeholder with your own PostgreSQL password.
 
-**Important:** Never upload your `.env` file or database password to GitHub.
+**Important:** Never upload your `.env` file or database credentials to GitHub.
 
 ### 6. Run the Pipeline
 
-Execute a single pipeline run:
+Execute:
 
 ```bash
 python main.py
@@ -291,9 +260,55 @@ Maintains pipeline execution history and performance metrics.
 | records_rejected | Records failing validation |
 | records_inserted | Records inserted into PostgreSQL |
 | data_quality_score | Percentage of valid records |
-| status | SUCCESS or FAILED |
+| status | SUCCESS, PARTIAL, or FAILED |
 | error_message | Execution error details, if any |
 | created_at | Monitoring record creation timestamp |
+
+## Data Quality Validation
+
+The pipeline applies data validation during the transformation stage to ensure that only valid weather records are loaded into the main PostgreSQL table.
+
+### Validation Rules
+
+| Field | Validation Rule |
+|---|---|
+| City | Must be a non-empty string |
+| Latitude | Must be between -90 and 90 |
+| Longitude | Must be between -180 and 180 |
+| Observation Time | Must be a valid, non-empty timestamp |
+| Temperature | Must be between -80°C and 60°C |
+| Relative Humidity | Must be between 0% and 100% |
+| Apparent Temperature | Must be between -100°C and 70°C |
+| Precipitation | Must be between 0 and 1000 mm |
+| Weather Code | Must be between 0 and 99 |
+| Wind Speed | Must be between 0 and 400 km/h |
+
+Numeric fields are converted to numeric values. Missing, non-numeric, non-finite, and out-of-range values are rejected.
+
+### Duplicate Detection
+
+- Identifies duplicate records using the combination of city and observation time.
+- Removes duplicate combinations before separating valid and rejected records.
+- Keeps the last occurrence in the input data.
+- Records with invalid city or observation-time keys are not included in duplicate detection.
+
+### Rejected Records
+
+Records that fail validation are excluded from the main `weather_records` table and stored in the `rejected_weather_records` table with their rejection reasons.
+
+### Data Quality Score
+
+The data quality score measures the percentage of valid records after duplicate removal.
+
+**Formula:**
+
+Data Quality Score = (Valid Records / Records After Duplicate Removal) × 100
+
+For example, if 8 records are valid and 2 are rejected, the data quality score is 80%.
+
+If no records remain after duplicate removal, the score is 0%.
+
+The score is logged during transformation and recorded as part of pipeline execution monitoring.
 
 ## 📈 Sample SQL Analytics
 
@@ -338,6 +353,8 @@ GROUP BY status;
 
 ### 4. Data Quality Score by Execution
 
+The following SQL query retrieves the data quality score and record statistics for each pipeline execution.
+
 ```sql
 SELECT
     id,
@@ -363,58 +380,55 @@ ORDER BY total_rejected DESC;
 
 ## 🧪 Testing & Reliability
 
-The project uses automated testing with Pytest to verify important pipeline functionality.
+The project uses **Pytest** to verify the reliability of its extraction, transformation, database, loading, monitoring, and logging components.
 
-### Testing Coverage
+### Test Coverage
 
-The automated test suite covers:
+The automated test suite contains 72 tests across seven test modules.
 
-- Data extraction and API retry handling.
-- Handling API failures after retry attempts.
-- Data transformation and validation.
-- Acceptance of valid weather records.
-- Rejection of invalid and missing measurements.
-- Duplicate record removal.
-- Database loading of valid records.
-- Handling empty DataFrames.
-- Database loading error handling.
+| Test Module | Tests | Coverage |
+|---|---:|---|
+| `test_database.py` | 10 | Database configuration, engine creation, and connection handling |
+| `test_extract_retries.py` | 5 | API retries, failed requests, and malformed responses |
+| `test_load.py` | 9 | Database loading, duplicate handling, and rejected records |
+| `test_logger.py` | 4 | Rotating file logging, console logging, and handler management |
+| `test_main.py` | 4 | Pipeline success, partial execution, and failure handling |
+| `test_monitoring.py` | 4 | Pipeline execution monitoring and database error handling |
+| `test_transform.py` | 36 | Data validation, missing values, duplicates, numeric boundaries, and invalid values |
+| **Total** | **72** | |
 
-### Run Tests
+### Run Tests Locally
 
-Activate your virtual environment and execute:
+Activate the virtual environment and execute:
 
 ```bash
 python -m pytest -v
 ```
-
-### Reliability Features
-
-- API retry mechanism with three attempts.
-- Error handling for failed city-level API requests.
-- Duplicate prevention using PostgreSQL constraints.
-- Logging of pipeline execution events and errors.
-- Automated execution monitoring.
-- Data quality score calculation.
-- Scheduled execution with APScheduler.
 
 ### Latest Test Results
 
-The latest recorded automated test execution completed successfully.
+The latest verified automated test execution completed successfully.
 
 | Metric | Result |
 |---|---:|
-| Total Tests | 9 |
-| Passed | 9 |
+| Total Tests | 72 |
+| Passed | 72 |
 | Failed | 0 |
-| Execution Time | 1.07 seconds |
+| Execution Time | 3.56 seconds |
 
-Test execution command:
+**Test Status:** All 72 automated tests passed successfully.
 
-```bash
-python -m pytest -v
-```
+### Reliability Features
 
-**Test Status:** All 9 automated tests passed successfully in the recorded run.
+- API retry mechanism with up to three attempts.
+- Error handling for failed city-level API requests.
+- Data validation and rejection of invalid records.
+- Duplicate prevention using PostgreSQL unique constraints.
+- Database transaction handling during record loading.
+- Logging of pipeline execution events and errors.
+- Automated pipeline execution monitoring.
+- Data quality score calculation.
+- Scheduled execution using APScheduler.
 
 ## 📁 Project Structure
 
@@ -427,6 +441,9 @@ real-time-weather-data-engineering-pipeline/
 ├── dashboard/
 │   └── app.py
 │
+├── sql/
+│   └── schema.sql
+│
 ├── src/
 │   ├── __init__.py
 │   ├── database.py
@@ -438,8 +455,12 @@ real-time-weather-data-engineering-pipeline/
 │   └── transform.py
 │
 ├── tests/
+│   ├── test_database.py
 │   ├── test_extract_retries.py
 │   ├── test_load.py
+│   ├── test_logger.py
+│   ├── test_main.py
+│   ├── test_monitoring.py
 │   └── test_transform.py
 │
 ├── screenshots/
@@ -458,12 +479,9 @@ real-time-weather-data-engineering-pipeline/
 └── README.md
 ```
 
----
-
 ## 👩‍💻 Author
 
 **Uthra Thirulogasundar**
 
-GitHub: [uthrathirulok](https://github.com/uthrathirulok)
-
-Project Repository: [Real-Time Weather Data Engineering & Quality Monitoring Pipeline](https://github.com/uthrathirulok/real-time-weather-data-engineering-pipeline)
+- **GitHub:** [uthrathirulok](https://github.com/uthrathirulok)
+- **Project Repository:** [Real-Time Weather Data Engineering & Quality Monitoring Pipeline](https://github.com/uthrathirulok/real-time-weather-data-engineering-pipeline)
