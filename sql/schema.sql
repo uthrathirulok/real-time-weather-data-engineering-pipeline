@@ -56,9 +56,9 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     status VARCHAR(20) NOT NULL,
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
+     
     CONSTRAINT valid_pipeline_status
-        CHECK (status IN ('SUCCESS', 'FAILED')),
+    CHECK (status IN ('SUCCESS', 'PARTIAL', 'FAILED')),
 
     CONSTRAINT valid_quality_score
         CHECK (

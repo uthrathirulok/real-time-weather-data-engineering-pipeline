@@ -1,17 +1,21 @@
+
 import requests
 from unittest.mock import Mock, patch
 
-from src.extract import fetch_weather
+from src.extract import (
+    fetch_weather,
+    extract_weather_data
+)
 
 
-def test_weather_api_retries_and_succeeds():
+def create_weather_response(city_time="2026-11-14T22:00"):
+    """Create a simulated successful weather API response."""
 
-    # Simulate a successful weather API response
     mock_response = Mock()
 
     mock_response.json.return_value = {
         "current": {
-            "time": "2026-11-14T22:00",
+            "time": city_time,
             "temperature_2m": 28.5,
             "relative_humidity_2m": 70,
             "apparent_temperature": 30.0,
@@ -21,7 +25,13 @@ def test_weather_api_retries_and_succeeds():
         }
     }
 
-    # Simulate two failures followed by success
+    return mock_response
+
+
+def test_weather_api_retries_and_succeeds():
+
+    mock_response = create_weather_response()
+
     simulated_failures = [
         requests.exceptions.ConnectionError(
             "Simulated temporary API failure"
@@ -31,7 +41,7 @@ def test_weather_api_retries_and_succeeds():
         ),
         mock_response
     ]
-    
+
     with patch(
         "src.extract.requests.get",
         side_effect=simulated_failures
@@ -46,47 +56,32 @@ def test_weather_api_retries_and_succeeds():
 
             result = fetch_weather("Chennai", city_config)
 
-            # Verify three API attempts
             assert mock_get.call_count == 3
-
-            # Verify two retry waits
             assert mock_sleep.call_count == 2
 
-            # Verify weather data was returned
             assert result is not None
             assert result["city"] == "Chennai"
             assert result["temperature_2m"] == 28.5
 
             print("\nRETRY TEST PASSED!")
-            print("First attempt: Failed")
-            print("Second attempt: Failed")
-            print("Third attempt: Successful")
-            print("Total API attempts: 3")
-            print("Retry waits: 2")
+
 
 def test_pipeline_continues_after_all_retries_fail():
 
-    # Simulate a successful weather response for Bengaluru
-    mock_response = Mock()
+    mock_response = create_weather_response(
+        "2026-11-14T22:30"
+    )
 
-    mock_response.json.return_value = {
-        "current": {
-            "time": "2026-11-14T22:30",
-            "temperature_2m": 27.5,
-            "relative_humidity_2m": 65,
-            "apparent_temperature": 29.0,
-            "precipitation": 0.0,
-            "weather_code": 1,
-            "wind_speed_10m": 10.0
-        }
-    }
-
-    # Chennai fails three times.
-    # Bengaluru succeeds on its first attempt.
     simulated_results = [
-        requests.exceptions.ConnectionError("Simulated API failure"),
-        requests.exceptions.ConnectionError("Simulated API failure"),
-        requests.exceptions.ConnectionError("Simulated API failure"),
+        requests.exceptions.ConnectionError(
+            "Simulated API failure"
+        ),
+        requests.exceptions.ConnectionError(
+            "Simulated API failure"
+        ),
+        requests.exceptions.ConnectionError(
+            "Simulated API failure"
+        ),
         mock_response
     ]
 
@@ -101,10 +96,7 @@ def test_pipeline_continues_after_all_retries_fail():
         }
     }
 
-    with patch(
-        "src.extract.CITIES",
-        test_cities
-    ):
+    with patch("src.extract.CITIES", test_cities):
 
         with patch(
             "src.extract.requests.get",
@@ -113,22 +105,103 @@ def test_pipeline_continues_after_all_retries_fail():
 
             with patch("src.extract.time.sleep") as mock_sleep:
 
-                from src.extract import extract_weather_data
+                result = extract_weather_data()
 
-                records = extract_weather_data()
-
-                # Four API calls: three for Chennai, one for Bengaluru
                 assert mock_get.call_count == 4
-
-                # Two waits between Chennai's three attempts
                 assert mock_sleep.call_count == 2
 
-                # Chennai should be skipped
-                # Bengaluru should be successfully extracted
-                assert len(records) == 1
-                assert records[0]["city"] == "Bengaluru"
+                assert len(result["records"]) == 1
+                assert result["records"][0]["city"] == "Bengaluru"
+
+                assert result["successful_cities"] == ["Bengaluru"]
+
+                assert "Chennai" in result["failed_cities"]
 
                 print("\nFAILURE HANDLING TEST PASSED!")
-                print("Chennai: Failed after 3 attempts")
-                print("Bengaluru: Successfully extracted")
-                print("Pipeline continued after Chennai failed.")
+
+
+def test_all_cities_fail():
+
+    test_cities = {
+        "Chennai": {
+            "latitude": 13.0827,
+            "longitude": 80.2707
+        },
+        "Bengaluru": {
+            "latitude": 12.9716,
+            "longitude": 77.5946
+        }
+    }
+
+    with patch("src.extract.CITIES", test_cities):
+
+        with patch(
+            "src.extract.requests.get",
+            side_effect=requests.exceptions.ConnectionError(
+                "API unavailable"
+            )
+        ):
+
+            with patch("src.extract.time.sleep"):
+
+                result = extract_weather_data()
+
+                assert result["records"] == []
+                assert result["successful_cities"] == []
+                assert len(result["failed_cities"]) == 2
+
+
+def test_malformed_api_response_is_not_retried():
+
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "current": "invalid structure"
+    }
+
+    city_config = {
+        "latitude": 13.0827,
+        "longitude": 80.2707
+    }
+
+    with patch(
+        "src.extract.requests.get",
+        return_value=mock_response
+    ) as mock_get:
+
+        with patch("src.extract.time.sleep") as mock_sleep:
+
+            result = fetch_weather("Chennai", city_config)
+
+            assert result is None
+            assert mock_get.call_count == 1
+            assert mock_sleep.call_count == 0
+
+
+def test_http_400_is_not_retried():
+
+    mock_response = Mock()
+
+    mock_response.status_code = 400
+
+    http_error = requests.exceptions.HTTPError(
+        "Bad request",
+        response=mock_response
+    )
+
+    with patch(
+        "src.extract.requests.get",
+        side_effect=http_error
+    ) as mock_get:
+
+        with patch("src.extract.time.sleep") as mock_sleep:
+
+            city_config = {
+                "latitude": 13.0827,
+                "longitude": 80.2707
+            }
+
+            result = fetch_weather("Chennai", city_config)
+
+            assert result is None
+            assert mock_get.call_count == 1
+            assert mock_sleep.call_count == 0

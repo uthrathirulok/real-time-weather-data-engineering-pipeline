@@ -19,11 +19,16 @@ def main():
 
     # Initialize monitoring values
     weather_records = []
+    successful_cities = []
+    failed_cities = {}
+
     valid_df = None
     rejected_df = None
+
     inserted_count = 0
     rejected_count = 0
     quality_score = 0
+
     status = "FAILED"
     error_message = None
 
@@ -38,7 +43,39 @@ def main():
         # STEP 1: EXTRACT
         print("\nSTEP 1: EXTRACTING WEATHER DATA")
 
-        weather_records = extract_weather_data()
+        extraction_result = extract_weather_data()
+
+        weather_records = extraction_result["records"]
+        successful_cities = extraction_result["successful_cities"]
+        failed_cities = extraction_result["failed_cities"]
+
+        print("\nEXTRACTION SUMMARY")
+        print(f"Successful cities: {len(successful_cities)}")
+        print(f"Failed cities: {len(failed_cities)}")
+
+        if failed_cities:
+            print("\nFailed city details:")
+
+            for city, reason in failed_cities.items():
+                print(f"- {city}: {reason}")
+
+            error_message = "; ".join(
+                f"{city}: {reason}"
+                for city, reason in failed_cities.items()
+            )
+
+        # Stop if no city returned weather data
+        if not weather_records:
+            raise RuntimeError(
+                "Weather extraction failed for all configured cities."
+            )
+
+        # Determine provisional extraction status
+        status = (
+            "PARTIAL"
+            if failed_cities
+            else "SUCCESS"
+        )
 
         # STEP 2: TRANSFORM
         print("\nSTEP 2: TRANSFORMING AND VALIDATING DATA")
@@ -64,30 +101,44 @@ def main():
 
         rejected_count = load_rejected_records(rejected_df)
 
-        # Mark pipeline as successful
-        status = "SUCCESS"
-
         # PIPELINE SUMMARY
         print("\n" + "=" * 55)
         print("PIPELINE EXECUTION SUMMARY")
         print("=" * 55)
 
+        print(f"Successful cities: {len(successful_cities)}")
+        print(f"Failed cities: {len(failed_cities)}")
         print(f"Records extracted: {len(weather_records)}")
         print(f"Valid records: {len(valid_df)}")
         print(f"Rejected records: {len(rejected_df)}")
         print(f"Rejected records saved: {rejected_count}")
         print(f"Records inserted: {inserted_count}")
         print(f"Data quality score: {quality_score:.2f}%")
+        print(f"Pipeline status: {status}")
 
-        print("\nETL pipeline execution completed successfully!")
-
-        logger.info("WEATHER PIPELINE EXECUTION COMPLETED SUCCESSFULLY")
+        if status == "PARTIAL":
+            print(
+                "\nPipeline completed with partial extraction."
+            )
+            logger.warning(
+                "WEATHER PIPELINE COMPLETED WITH PARTIAL STATUS"
+            )
+        else:
+            print(
+                "\nETL pipeline execution completed successfully!"
+            )
+            logger.info(
+                "WEATHER PIPELINE EXECUTION COMPLETED SUCCESSFULLY"
+            )
 
     except Exception as error:
 
+        status = "FAILED"
         error_message = str(error)
 
         logger.exception("WEATHER PIPELINE EXECUTION FAILED")
+
+        print("\nETL pipeline execution failed.")
 
         raise
 

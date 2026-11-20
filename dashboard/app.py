@@ -11,6 +11,9 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
 from src.database import get_database_engine
+from src.logger import get_logger
+
+logger = get_logger()
 
 
 def format_ist_timestamp(value, date_format="%d %b, %I:%M %p"):
@@ -114,7 +117,7 @@ def get_latest_weather():
 
 @st.cache_data(ttl=60)
 def get_historical_weather():
-    """Retrieve historical weather observations from PostgreSQL."""
+    """Retrieve the latest 1000 weather observations from PostgreSQL."""
 
     engine = get_database_engine()
 
@@ -126,7 +129,8 @@ def get_historical_weather():
             relative_humidity_2m,
             precipitation
         FROM weather_records
-        ORDER BY observation_time ASC;
+        ORDER BY observation_time DESC
+        LIMIT 1000;
     """)
 
     try:
@@ -137,7 +141,6 @@ def get_historical_weather():
 
     finally:
         engine.dispose()
-
 
 @st.cache_data(ttl=30)
 def get_pipeline_history():
@@ -171,9 +174,10 @@ def get_pipeline_history():
         engine.dispose()
 
 
+
 @st.cache_data(ttl=30)
 def get_rejected_records():
-    """Retrieve rejected weather records from PostgreSQL."""
+    """Retrieve the latest 500 rejected weather records."""
 
     engine = get_database_engine()
 
@@ -191,7 +195,8 @@ def get_rejected_records():
             rejection_reason,
             rejected_at
         FROM rejected_weather_records
-        ORDER BY rejected_at DESC;
+        ORDER BY rejected_at DESC
+        LIMIT 500;
     """)
 
     try:
@@ -204,9 +209,10 @@ def get_rejected_records():
         engine.dispose()
 
 
+
 @st.cache_data(ttl=30)
 def get_pipeline_analytics():
-    """Retrieve pipeline metrics for historical performance analytics."""
+    """Retrieve the latest 500 pipeline execution records."""
 
     engine = get_database_engine()
 
@@ -222,7 +228,8 @@ def get_pipeline_analytics():
             data_quality_score,
             execution_duration_seconds
         FROM pipeline_runs
-        ORDER BY started_at ASC
+        ORDER BY id DESC
+        LIMIT 500;
     """)
 
     try:
@@ -234,8 +241,6 @@ def get_pipeline_analytics():
     finally:
         engine.dispose()
 
-
-
 # --------------------------------------------------
 # DASHBOARD TITLE
 # --------------------------------------------------
@@ -246,6 +251,23 @@ st.markdown(
     "Monitor weather data, pipeline execution, "
     "and data quality across five Indian cities."
 )
+
+# --------------------------------------------------
+# DASHBOARD REFRESH
+# --------------------------------------------------
+
+refresh_col, info_col = st.columns([1, 4])
+
+with refresh_col:
+    if st.button("🔄 Refresh Dashboard"):
+        st.cache_data.clear()
+        st.rerun()
+
+with info_col:
+    st.caption(
+        "Dashboard data refreshes automatically according to "
+        "individual cache settings. Use the button for an immediate refresh."
+    )
 
 
 # --------------------------------------------------
@@ -336,8 +358,9 @@ try:
         col3.metric("Rejected Records", int(run["records_rejected"]))
         col4.metric("Records Inserted", int(run["records_inserted"]))
 
-except Exception as error:
-    st.error(f"Unable to retrieve pipeline information: {error}")
+except Exception:
+    logger.exception("Dashboard failed to retrieve pipeline information.")
+    st.error("Unable to retrieve pipeline information. Please check the application logs.")
 
 
 # --------------------------------------------------
@@ -389,8 +412,9 @@ try:
                     f"Observed: {row['observation_time']}"
                 )
 
-except Exception as error:
-    st.error(f"Unable to retrieve weather data: {error}")
+except Exception:
+    logger.exception("Dashboard failed to retrieve weather data.")
+    st.error("Unable to retrieve weather data. Please check the application logs.")
 
 
 # --------------------------------------------------
@@ -462,10 +486,9 @@ try:
             "Total recorded precipitation by city (mm)."
         )
 
-except Exception as error:
-    st.error(
-        f"Unable to retrieve historical weather data: {error}"
-    )
+except Exception:
+    logger.exception("Dashboard failed to retrieve historical weather data.")
+    st.error("Unable to retrieve historical weather data. Please check the application logs.")
 
 
 # --------------------------------------------------
@@ -529,18 +552,29 @@ try:
 
         st.subheader("Validation Failure Reasons")
 
+        
         reason_counts = (
             rejected_df["rejection_reason"]
-            .value_counts()
+            .dropna()
+            .astype(str)
+            .str.split(";")
+            .explode()
+            .str.strip()
         )
 
-        st.bar_chart(reason_counts)
+        reason_counts = reason_counts[
+            reason_counts != ""
+        ].value_counts()
 
-except Exception as error:
-    st.error(
-        f"Unable to retrieve rejected records: {error}"
-    )
+        if not reason_counts.empty:
+            st.bar_chart(reason_counts)
+        else:
+            st.info("No validation failure reasons are available.")
 
+
+except Exception:
+    logger.exception("Dashboard failed to retrieve rejected records.")
+    st.error("Unable to retrieve rejected records. Please check the application logs.")
 
 # --------------------------------------------------
 # DATA QUALITY & PIPELINE PERFORMANCE ANALYTICS
@@ -560,6 +594,7 @@ try:
         )
 
     else:
+        # Prepare timestamps and status values
         analytics_df["started_at"] = (
             pd.to_datetime(
                 analytics_df["started_at"],
@@ -574,10 +609,27 @@ try:
             analytics_df["status"].astype(str).str.upper()
         )
 
+        analytics_df["id"] = pd.to_numeric(
+            analytics_df["id"], errors="coerce"
+        )
+
+        analytics_df = analytics_df.dropna(subset=["id"]).copy()
+        analytics_df["id"] = analytics_df["id"].astype(int)
+
+        # ------------------------------------------
+        # HISTORICAL PIPELINE PERFORMANCE METRICS
+        # ------------------------------------------
+
         total_runs = len(analytics_df)
+
         successful_runs = int(
             (analytics_df["status"] == "SUCCESS").sum()
         )
+
+        partial_runs = int(
+            (analytics_df["status"] == "PARTIAL").sum()
+        )
+
         failed_runs = int(
             (analytics_df["status"] == "FAILED").sum()
         )
@@ -587,73 +639,149 @@ try:
             if total_runs else 0
         )
 
-        average_duration = analytics_df[
-            "execution_duration_seconds"
-        ].dropna().mean()
+        duration_values = pd.to_numeric(
+            analytics_df["execution_duration_seconds"],
+            errors="coerce"
+        )
+        average_duration = duration_values[
+            duration_values >= 0
+        ].mean()
 
         pipeline_rejected_total = int(
             pd.to_numeric(
                 analytics_df["records_rejected"],
                 errors="coerce"
-            ).fillna(0).sum()
+            ).fillna(0).clip(lower=0).sum()
         )
 
         rejected_records_in_db = get_rejected_record_count()
 
-        metric1, metric2, metric3, metric4, metric5 = st.columns(5)
+        # Identify the latest execution using Run ID
+        latest_run = analytics_df.sort_values(
+            "id", ascending=False
+        ).iloc[0]
 
-        metric1.metric("Total Pipeline Runs", total_runs)
-        metric2.metric("Successful Runs", successful_runs)
-        metric3.metric("Success Rate", f"{success_rate:.1f}%")
-        metric4.metric("Rejected by Pipeline Runs", pipeline_rejected_total)
-        metric5.metric("Rejected Records Stored", rejected_records_in_db)
+        latest_run_id = int(latest_run["id"])
+        latest_run_status = str(latest_run["status"]).upper()
+
+        # ------------------------------------------
+        # LATEST PIPELINE EXECUTION STATUS
+        # ------------------------------------------
+
+        st.subheader("Latest Pipeline Execution")
+
+        latest_col1, latest_col2 = st.columns(2)
+
+        latest_col1.metric(
+            "Latest Run ID",
+            latest_run_id
+        )
+
+        latest_col2.metric(
+            "Latest Run Status",
+            latest_run_status
+        )
+
+        if latest_run_status == "SUCCESS":
+            st.success(
+                f"Latest execution (Run ID {latest_run_id}) "
+                "completed successfully."
+            )
+
+        elif latest_run_status == "PARTIAL":
+            st.warning(
+                f"Latest execution (Run ID {latest_run_id}) "
+                "completed partially. Check failed city extractions."
+            )
+
+        elif latest_run_status == "FAILED":
+            st.error(
+                f"Latest execution (Run ID {latest_run_id}) failed. "
+                "Review the application logs."
+            )
+
+        else:
+            st.info(
+                f"Latest execution (Run ID {latest_run_id}) "
+                f"has status: {latest_run_status}."
+            )
+
+        # ------------------------------------------
+        # HISTORICAL PERFORMANCE METRICS
+        # ------------------------------------------
+
+        st.subheader("Historical Pipeline Performance")
+
+        metric1, metric2, metric3, metric4, metric5, metric6, metric7 = st.columns(7)
+
+        metric1.metric("Total Runs", total_runs)
+        metric2.metric("Successful", successful_runs)
+        metric3.metric("Partial", partial_runs)
+        metric4.metric("Failed", failed_runs)
+        metric5.metric("Success Rate", f"{success_rate:.1f}%")
+        metric6.metric("Rejected by Runs", pipeline_rejected_total)
+        metric7.metric("Rejected Stored", rejected_records_in_db)
 
         st.caption(
-            "Rejected by Pipeline Runs represents the sum recorded in "
-            "pipeline_runs. Rejected Records Stored represents the current "
-            "number of rows in rejected_weather_records, including test records."
+            "Historical performance metrics are calculated from the "
+            "latest 500 pipeline executions. Rejected by Runs represents "
+            "the sum recorded in pipeline_runs. Rejected Records Stored "
+            "represents the current number of rows in "
+            "rejected_weather_records, including test records."
         )
 
         if failed_runs > 0:
             st.warning(
-                f"{failed_runs} failed pipeline execution(s) found. "
-                "Review the execution history and application logs."
+                f"{failed_runs} historical failed execution(s) "
+                "were found among the latest 500 runs. "
+                "These do not necessarily indicate a current pipeline issue."
             )
-        else:
-            st.success(
-                "No failed pipeline executions found in the recorded history."
+
+        if partial_runs > 0:
+            st.info(
+                f"{partial_runs} partially successful historical "
+                "execution(s) were found among the latest 500 runs."
             )
 
         if pd.notna(average_duration):
             st.caption(
-                f"Average execution duration: {average_duration:.2f} seconds"
+                f"Average execution duration across the latest "
+                f"{total_runs} runs with valid duration data: "
+                f"{average_duration:.2f} seconds"
             )
 
-        
-        # Data quality score over time
+        # ------------------------------------------
+        # DATA QUALITY SCORE TREND
+        # ------------------------------------------
+
         st.subheader("Data Quality Score Trend")
 
         quality_df = analytics_df[
-            ["started_at", "data_quality_score"]
-        ].dropna().copy()
+            ["id", "started_at", "data_quality_score"]
+        ].copy()
+
+        quality_df["data_quality_score"] = pd.to_numeric(
+            quality_df["data_quality_score"],
+            errors="coerce"
+        )
+
+        quality_df = quality_df.dropna(
+            subset=["started_at", "data_quality_score"]
+        )
+
+        # Keep genuine zero scores; exclude only values outside 0-100.
+        quality_df = quality_df[
+            quality_df["data_quality_score"].between(0, 100)
+        ].sort_values(["started_at", "id"])
 
         if not quality_df.empty:
-            quality_df["started_at"] = pd.to_datetime(
-                quality_df["started_at"], errors="coerce"
-            )
-
-            quality_df["data_quality_score"] = pd.to_numeric(
-                quality_df["data_quality_score"], errors="coerce"
-            )
-
-            quality_df = quality_df.dropna().sort_values("started_at")
-
             quality_chart = alt.Chart(quality_df).mark_line(
                 point=True
             ).encode(
                 x=alt.X(
                     "started_at:T",
-                    title="Pipeline Execution Time"
+                    title="Execution Date & Time",
+                    axis=alt.Axis(labelAngle=-35)
                 ),
                 y=alt.Y(
                     "data_quality_score:Q",
@@ -661,10 +789,15 @@ try:
                     scale=alt.Scale(domain=[0, 100])
                 ),
                 tooltip=[
-                    alt.Tooltip("started_at:T", title="Started At"),
+                    alt.Tooltip("id:Q", title="Run ID"),
+                    alt.Tooltip(
+                        "started_at:T",
+                        title="Execution Time",
+                        format="%d %b %Y, %I:%M %p"
+                    ),
                     alt.Tooltip(
                         "data_quality_score:Q",
-                        title="Quality Score",
+                        title="Quality Score (%)",
                         format=".2f"
                     )
                 ]
@@ -676,30 +809,80 @@ try:
             )
 
             st.caption(
-                "Tracks the percentage of extracted records that passed validation "
-                "for each pipeline execution."
+                "Tracks the recorded data quality score for each pipeline run. "
+                "A score of 0% is retained when that value was recorded; "
+                "runs with missing or out-of-range scores are excluded."
             )
         else:
-            st.info("No data quality scores are available yet.")
+            st.info("No valid data quality scores are available yet.")
 
-        
-        # Pipeline execution duration over time
+        # ------------------------------------------
+        # PIPELINE EXECUTION DURATION
+        # ------------------------------------------
+
         st.subheader("Pipeline Execution Duration")
 
         duration_df = analytics_df[
-            ["started_at", "execution_duration_seconds"]
-        ].dropna()
+            ["id", "started_at", "execution_duration_seconds"]
+        ].copy()
+
+        duration_df["execution_duration_seconds"] = pd.to_numeric(
+            duration_df["execution_duration_seconds"],
+            errors="coerce"
+        )
+
+        duration_df = duration_df.dropna(
+            subset=["started_at", "execution_duration_seconds"]
+        )
+
+        duration_df = duration_df[
+            duration_df["execution_duration_seconds"] >= 0
+        ].sort_values(["started_at", "id"])
 
         if not duration_df.empty:
-            duration_chart = duration_df.set_index("started_at")
-            st.line_chart(duration_chart)
+            duration_chart = alt.Chart(duration_df).mark_line(
+                point=True
+            ).encode(
+                x=alt.X(
+                    "started_at:T",
+                    title="Execution Date & Time",
+                    axis=alt.Axis(labelAngle=-35)
+                ),
+                y=alt.Y(
+                    "execution_duration_seconds:Q",
+                    title="Duration (seconds)"
+                ),
+                tooltip=[
+                    alt.Tooltip("id:Q", title="Run ID"),
+                    alt.Tooltip(
+                        "started_at:T",
+                        title="Execution Time",
+                        format="%d %b %Y, %I:%M %p"
+                    ),
+                    alt.Tooltip(
+                        "execution_duration_seconds:Q",
+                        title="Duration (seconds)",
+                        format=".2f"
+                    )
+                ]
+            ).properties(height=350)
+
+            st.altair_chart(
+                duration_chart,
+                use_container_width=True
+            )
+
             st.caption(
-                "Shows how long each pipeline execution took, in seconds."
+                "Shows the duration of each pipeline execution in "
+                "chronological order."
             )
         else:
-            st.info("No execution duration measurements are available yet.")
+            st.info("No valid execution duration measurements are available yet.")
 
-        # Records extracted, valid, rejected and inserted
+        # ------------------------------------------
+        # RECORD PROCESSING TRENDS - GROUPED BARS
+        # ------------------------------------------
+
         st.subheader("Record Processing Trends")
 
         records_df = analytics_df[
@@ -719,6 +902,10 @@ try:
             "records_inserted",
         ]
 
+        records_df["id"] = pd.to_numeric(
+            records_df["id"], errors="coerce"
+        )
+
         for column in count_columns:
             records_df[column] = (
                 pd.to_numeric(records_df[column], errors="coerce")
@@ -726,38 +913,105 @@ try:
                 .clip(lower=0)
             )
 
-        records_df["Run"] = records_df["id"].apply(
-            lambda run_id: f"Run {int(run_id)}"
-        )
+        records_df = records_df.dropna(
+            subset=["id"]
+        ).sort_values("id", ascending=True)
 
-        records_chart = records_df.set_index("Run")[count_columns]
-
-        if not records_chart.empty:
-            st.bar_chart(records_chart)
-            st.caption(
-                "Compares extracted, valid, rejected and inserted record "
-                "counts for each pipeline Run ID."
+        if not records_df.empty:
+            records_long_df = records_df.melt(
+                id_vars=["id"],
+                value_vars=count_columns,
+                var_name="record_type",
+                value_name="record_count"
             )
 
-        # Success and failure distribution
+            records_chart = alt.Chart(records_long_df).mark_bar().encode(
+                x=alt.X(
+                    "id:O",
+                    sort=alt.SortField(field="id", order="ascending"),
+                    title="Run ID",
+                    axis=alt.Axis(labelAngle=-45)
+                ),
+                xOffset=alt.XOffset("record_type:N"),
+                y=alt.Y(
+                    "record_count:Q",
+                    title="Number of Records"
+                ),
+                color=alt.Color(
+                    "record_type:N",
+                    title="Record Type"
+                ),
+                tooltip=[
+                    alt.Tooltip("id:Q", title="Run ID"),
+                    alt.Tooltip("record_type:N", title="Record Type"),
+                    alt.Tooltip("record_count:Q", title="Record Count")
+                ]
+            ).properties(height=400)
+
+            st.altair_chart(
+                records_chart,
+                use_container_width=True
+            )
+
+            st.caption(
+                "Compares extracted, valid, rejected and inserted record "
+                "counts side by side for each pipeline Run ID."
+            )
+        else:
+            st.info("No record processing data is available.")
+
+        # ------------------------------------------
+        # PIPELINE RUN STATUS DISTRIBUTION
+        # ------------------------------------------
+
         st.subheader("Pipeline Run Status Distribution")
 
-        status_counts = analytics_df["status"].value_counts()
+        status_order = ["SUCCESS", "PARTIAL", "FAILED"]
+
+        status_counts = (
+            analytics_df["status"]
+            .value_counts()
+            .reindex(status_order, fill_value=0)
+            .rename_axis("status")
+            .reset_index(name="run_count")
+        )
 
         if not status_counts.empty:
-            st.bar_chart(status_counts)
+            status_chart = alt.Chart(status_counts).mark_bar().encode(
+                x=alt.X(
+                    "status:N",
+                    sort=status_order,
+                    title="Pipeline Status"
+                ),
+                y=alt.Y(
+                    "run_count:Q",
+                    title="Number of Runs"
+                ),
+                color=alt.Color(
+                    "status:N",
+                    sort=status_order,
+                    title="Status"
+                ),
+                tooltip=[
+                    alt.Tooltip("status:N", title="Status"),
+                    alt.Tooltip("run_count:Q", title="Number of Runs")
+                ]
+            ).properties(height=300)
+
+            st.altair_chart(
+                status_chart,
+                use_container_width=True
+            )
 
         st.caption(
             "Execution metrics and trends are calculated from pipeline_runs. "
             "The stored rejected-record count is queried separately from "
             "rejected_weather_records in PostgreSQL."
         )
-        
-except Exception as error:
-    st.error(
-        f"Unable to retrieve pipeline performance analytics: {error}"
-    )
 
+except Exception:
+    logger.exception("Dashboard failed to retrieve pipeline analytics.")
+    st.error("Unable to retrieve pipeline analytics. Please check the application logs.")
 
 
 # --------------------------------------------------
@@ -810,5 +1064,6 @@ try:
 
         st.caption("Showing the latest 20 pipeline executions.")
 
-except Exception as error:
-    st.error(f"Unable to retrieve pipeline history: {error}")
+except Exception:
+    logger.exception("Dashboard failed to retrieve pipeline history.")
+    st.error("Unable to retrieve pipeline history. Please check the application logs.")

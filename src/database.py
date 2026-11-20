@@ -2,8 +2,9 @@
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
+
 
 # Load database credentials from the .env file
 load_dotenv()
@@ -30,8 +31,9 @@ def get_database_engine():
     }
 
     missing_settings = [
-        name for name, value in required_settings.items()
-        if not value
+        name
+        for name, value in required_settings.items()
+        if not value or not value.strip()
     ]
 
     if missing_settings:
@@ -39,16 +41,30 @@ def get_database_engine():
             f"Missing database settings: {', '.join(missing_settings)}"
         )
 
+    # Validate PostgreSQL port
+    try:
+        database_port = int(DB_PORT)
+    except (TypeError, ValueError):
+        raise ValueError("DB_PORT must be a valid integer.")
+
+    if not 1 <= database_port <= 65535:
+        raise ValueError("DB_PORT must be between 1 and 65535.")
+
+    # Safely construct the database URL
     database_url = URL.create(
         drivername="postgresql+psycopg",
         username=DB_USER,
         password=DB_PASSWORD,
         host=DB_HOST,
-        port=int(DB_PORT),
+        port=database_port,
         database=DB_NAME
     )
 
-    engine = create_engine(database_url)
+    # Create an engine with connection health checks
+    engine = create_engine(
+        database_url,
+        pool_pre_ping=True
+    )
 
     return engine
 
@@ -58,15 +74,21 @@ def test_database_connection():
     Test whether Python can connect to PostgreSQL.
     """
 
+    engine = None
+
     try:
         engine = get_database_engine()
 
         with engine.connect() as connection:
-            print("Successfully connected to PostgreSQL!")
+            connection.execute(text("SELECT 1"))
 
-        engine.dispose()
+        print("Successfully connected to PostgreSQL!")
         return True
 
     except Exception as error:
         print(f"Database connection failed: {error}")
         return False
+
+    finally:
+        if engine is not None:
+            engine.dispose()
