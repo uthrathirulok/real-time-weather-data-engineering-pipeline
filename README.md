@@ -1,5 +1,7 @@
 # 🌦️ Real-Time Weather Data Engineering & Quality Monitoring Pipeline
 
+[![Pipeline CI](https://github.com/uthrathirulok/real-time-weather-data-engineering-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/uthrathirulok/real-time-weather-data-engineering-pipeline/actions/workflows/ci.yml)
+
 An end-to-end data engineering project that automatically collects weather data from multiple Indian cities, validates incoming records, stores structured data in PostgreSQL, and monitors pipeline execution and data quality through an interactive Streamlit dashboard.
 
 The pipeline integrates API-based data ingestion, data transformation, validation, database loading, automated scheduling, and monitoring to demonstrate a practical data engineering workflow.
