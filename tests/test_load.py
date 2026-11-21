@@ -250,3 +250,49 @@ def test_rejected_record_database_error_is_raised():
             load_rejected_records(rejected_df)
 
         mock_engine.dispose.assert_called_once()
+
+
+def test_database_transaction_rolls_back_on_loading_error():
+
+    valid_df = pd.concat(
+        [
+            create_valid_dataframe(),
+            create_valid_dataframe()
+        ],
+        ignore_index=True
+    )
+
+    mock_engine = MagicMock()
+
+    mock_connection = (
+        mock_engine.begin.return_value.__enter__.return_value
+    )
+
+    # First insertion succeeds, second insertion fails.
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = 1
+
+    mock_connection.execute.side_effect = [
+        mock_result,
+        RuntimeError("Simulated second insertion failure")
+    ]
+
+    with patch(
+        "src.load.get_database_engine",
+        return_value=mock_engine
+    ):
+
+        with pytest.raises(
+            RuntimeError,
+            match="Simulated second insertion failure"
+        ):
+            load_weather_data(valid_df)
+
+        # Confirm both insert attempts occurred.
+        assert mock_connection.execute.call_count == 2
+
+        # Confirm the transaction context was exited.
+        mock_engine.begin.return_value.__exit__.assert_called_once()
+
+        # Confirm database engine cleanup.
+        mock_engine.dispose.assert_called_once()

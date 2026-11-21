@@ -1,5 +1,5 @@
-
 import requests
+import pytest
 from unittest.mock import Mock, patch
 
 from src.extract import (
@@ -205,3 +205,37 @@ def test_http_400_is_not_retried():
             assert result is None
             assert mock_get.call_count == 1
             assert mock_sleep.call_count == 0
+
+@pytest.mark.parametrize("status_code", [429, 500, 503])
+def test_retryable_http_errors_are_retried(status_code):
+
+    mock_response = create_weather_response()
+
+    http_error = requests.exceptions.HTTPError(
+        f"HTTP {status_code}",
+        response=Mock(status_code=status_code)
+    )
+
+    simulated_results = [
+        http_error,
+        mock_response
+    ]
+
+    city_config = {
+        "latitude": 13.0827,
+        "longitude": 80.2707
+    }
+
+    with patch(
+        "src.extract.requests.get",
+        side_effect=simulated_results
+    ) as mock_get:
+
+        with patch("src.extract.time.sleep") as mock_sleep:
+
+            result = fetch_weather("Chennai", city_config)
+
+            assert result is not None
+            assert result["city"] == "Chennai"
+            assert mock_get.call_count == 2
+            assert mock_sleep.call_count == 1

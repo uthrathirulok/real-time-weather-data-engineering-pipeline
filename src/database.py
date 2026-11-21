@@ -63,8 +63,10 @@ def get_database_engine():
     # Create an engine with connection health checks
     engine = create_engine(
         database_url,
-        pool_pre_ping=True
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 10}
     )
+
 
     return engine
 

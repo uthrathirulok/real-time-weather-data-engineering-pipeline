@@ -65,7 +65,14 @@ def main():
             )
 
         # Stop if no city returned weather data
+
         if not weather_records:
+            if error_message:
+                raise RuntimeError(
+                    f"Weather extraction failed for all configured cities. "
+                    f"Details: {error_message}"
+                )
+
             raise RuntimeError(
                 "Weather extraction failed for all configured cities."
             )
@@ -131,10 +138,17 @@ def main():
                 "WEATHER PIPELINE EXECUTION COMPLETED SUCCESSFULLY"
             )
 
+
     except Exception as error:
 
         status = "FAILED"
-        error_message = str(error)
+
+        current_error = str(error)
+
+        if error_message:
+            error_message = f"{error_message}; Pipeline error: {current_error}"
+        else:
+            error_message = current_error
 
         logger.exception("WEATHER PIPELINE EXECUTION FAILED")
 

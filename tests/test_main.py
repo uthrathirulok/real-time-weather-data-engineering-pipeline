@@ -89,6 +89,12 @@ def test_pipeline_fails_when_all_cities_fail(
 
     assert mock_monitor.call_args.kwargs["status"] == "FAILED"
 
+    error_message = mock_monitor.call_args.kwargs["error_message"]
+
+    assert "Chennai" in error_message
+    assert "Delhi" in error_message
+    assert "API request failed" in error_message
+
 
 @patch("main.save_pipeline_run")
 @patch("main.load_rejected_records", return_value=0)
@@ -110,3 +116,77 @@ def test_pipeline_fails_when_database_loading_fails(
         main()
 
     assert mock_monitor.call_args.kwargs["status"] == "FAILED"
+    assert (
+        mock_monitor.call_args.kwargs["error_message"]
+        == "Database loading failed"
+    )
+
+
+@patch("main.save_pipeline_run")
+@patch("main.load_rejected_records", return_value=0)
+@patch("main.load_weather_data")
+@patch("main.transform_weather_data")
+@patch("main.extract_weather_data")
+def test_pipeline_preserves_partial_extraction_error_when_loading_fails(
+    mock_extract,
+    mock_transform,
+    mock_load,
+    mock_load_rejected,
+    mock_monitor
+):
+    mock_extract.return_value = create_extraction_result(
+        successful_cities=["Chennai"],
+        failed_cities={"Delhi": "API request failed"}
+    )
+
+    mock_transform.return_value = create_dataframes()
+
+    mock_load.side_effect = RuntimeError("Database loading failed")
+
+    with pytest.raises(RuntimeError, match="Database loading failed"):
+        main()
+
+    assert mock_monitor.call_args.kwargs["status"] == "FAILED"
+
+    error_message = mock_monitor.call_args.kwargs["error_message"]
+
+    assert "Delhi" in error_message
+    assert "API request failed" in error_message
+    assert "Database loading failed" in error_message
+
+
+@patch("main.save_pipeline_run")
+@patch("main.load_rejected_records")
+@patch("main.load_weather_data", return_value=1)
+@patch("main.transform_weather_data")
+@patch("main.extract_weather_data")
+def test_pipeline_fails_when_rejected_record_loading_fails(
+    mock_extract,
+    mock_transform,
+    mock_load,
+    mock_load_rejected,
+    mock_monitor
+):
+    mock_extract.return_value = create_extraction_result()
+
+    valid_df = pd.DataFrame([{"city": "Chennai"}])
+    rejected_df = pd.DataFrame([{"city": "InvalidCity"}])
+
+    mock_transform.return_value = (valid_df, rejected_df)
+
+    mock_load_rejected.side_effect = RuntimeError(
+        "Rejected records loading failed"
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Rejected records loading failed"
+    ):
+        main()
+
+    assert mock_monitor.call_args.kwargs["status"] == "FAILED"
+
+    assert (
+        mock_monitor.call_args.kwargs["error_message"]
+        == "Rejected records loading failed"
+    )

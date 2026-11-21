@@ -99,5 +99,21 @@ def test_save_pipeline_run_with_partial_status(mock_get_engine):
     run_id = save_pipeline_run(**parameters)
 
     assert run_id == 102
+
     mock_connection.execute.assert_called_once()
+
+    saved_parameters = (
+        mock_connection.execute.call_args.args[1]
+    )
+
+    assert saved_parameters["status"] == "PARTIAL"
+    assert saved_parameters["error_message"] == (
+        "Delhi API request failed"
+    )
+
+    assert saved_parameters["records_extracted"] == 5
+    assert saved_parameters["records_valid"] == 4
+    assert saved_parameters["records_rejected"] == 1
+    assert saved_parameters["records_inserted"] == 4
+
     mock_engine.dispose.assert_called_once()
