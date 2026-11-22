@@ -21,6 +21,8 @@ services:
   pipeline:
     build: .
     container_name: weather_pipeline_app
+    profiles: ["manual"]
+    command: ["python", "main.py"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -31,5 +33,48 @@ services:
       db:
         condition: service_healthy
 
+  scheduler:
+    build: .
+    container_name: weather_pipeline_scheduler
+    restart: unless-stopped
+    command: ["python", "scheduler.py"]
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - weather_scheduler_logs:/app/logs  
+    depends_on:
+      db:
+        condition: service_healthy
+
+  dashboard:
+    build: .
+    container_name: weather_pipeline_dashboard
+    restart: unless-stopped
+    command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   weather_db_data:
+  weather_scheduler_logs:
