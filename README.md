@@ -481,6 +481,75 @@ real-time-weather-data-engineering-pipeline/
 └── README.md
 ```
 
+## 🐳 Docker Deployment
+
+The pipeline is containerized using Docker, with PostgreSQL running in a separate container. Docker Compose manages both services and their communication.
+
+### Architecture
+
+- **Pipeline Container:** Runs the Python ETL application.
+- **PostgreSQL Container:** Stores weather records, rejected records, and pipeline execution metrics.
+- **Docker Compose:** Orchestrates the application and database services.
+- **Persistent Storage:** Uses a Docker named volume to retain database data across container restarts.
+
+### Docker Services
+
+| Service | Description | Port |
+|---|---|---|
+| pipeline | Python ETL application | — |
+| db | PostgreSQL database | 5433 (host) / 5432 (container) |
+
+### Run with Docker
+
+**1. Build the Docker image**
+
+```bash
+docker compose build pipeline
+```
+
+**2. Start PostgreSQL**
+
+```bash
+docker compose up -d db
+```
+
+**3. Initialize the database schema**
+
+```powershell
+Get-Content -Raw sql/schema.sql | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+**4. Run the ETL pipeline**
+
+```bash
+docker compose up --force-recreate pipeline
+```
+
+**5. Verify the loaded records**
+
+```bash
+docker compose exec -T db psql -U postgres -d weather_pipeline -t -A -c "SELECT COUNT(*) FROM weather_records;"
+```
+
+**6. Verify pipeline monitoring**
+
+```bash
+docker compose exec -T db psql -U postgres -d weather_pipeline -t -A -c "SELECT id, status, records_extracted, records_valid, records_inserted, data_quality_score FROM pipeline_runs;"
+```
+
+### Data Persistence
+
+PostgreSQL data is stored in a Docker named volume (`weather_db_data`), allowing database records to persist when containers are stopped or recreated.
+
+### Stop Docker Services
+
+```bash
+docker compose down
+```
+
+> Note: `docker compose down` stops and removes containers and the network, but preserves the database volume. Database data remains available when the services are started again.
+
+
 ## 👩‍💻 Author
 
 **Uthra Thirulogasundar**
