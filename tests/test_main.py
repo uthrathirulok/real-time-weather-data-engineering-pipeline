@@ -190,3 +190,50 @@ def test_pipeline_fails_when_rejected_record_loading_fails(
         mock_monitor.call_args.kwargs["error_message"]
         == "Rejected records loading failed"
     )
+@patch("main.save_pipeline_run")
+@patch("main.load_rejected_records", return_value=5)
+@patch("main.load_weather_data", return_value=0)
+@patch("main.transform_weather_data")
+@patch("main.extract_weather_data")
+def test_pipeline_records_partial_status_when_all_records_rejected(
+    mock_extract,
+    mock_transform,
+    mock_load,
+    mock_load_rejected,
+    mock_monitor
+):
+    mock_extract.return_value = create_extraction_result(
+        records=[
+            {"city": "Chennai"},
+            {"city": "Bengaluru"},
+            {"city": "Mumbai"},
+            {"city": "Delhi"},
+            {"city": "Hyderabad"}
+        ],
+        successful_cities=[
+            "Chennai",
+            "Bengaluru",
+            "Mumbai",
+            "Delhi",
+            "Hyderabad"
+        ],
+        failed_cities={}
+    )
+
+    valid_df = pd.DataFrame()
+    rejected_df = pd.DataFrame([
+        {"city": "Chennai"},
+        {"city": "Bengaluru"},
+        {"city": "Mumbai"},
+        {"city": "Delhi"},
+        {"city": "Hyderabad"}
+    ])
+
+    mock_transform.return_value = (valid_df, rejected_df)
+
+    main()
+
+    assert mock_monitor.call_args.kwargs["status"] == "PARTIAL"
+    assert mock_monitor.call_args.kwargs["records_valid"] == 0
+    assert mock_monitor.call_args.kwargs["records_rejected"] == 5
+    assert mock_monitor.call_args.kwargs["data_quality_score"] == 0

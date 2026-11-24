@@ -6,6 +6,7 @@ venv/
 # Environment variables and secrets
 .env
 .env.*
+!.env.example
 
 # Python cache
 __pycache__/
@@ -29,3 +30,5 @@ Thumbs.db
 
 # Old dashboard backup
 dashboard/app - Copy.py
+# Python 3.11 virtual environment
+.venv311/

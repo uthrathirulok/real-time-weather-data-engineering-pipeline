@@ -691,7 +691,7 @@ try:
         elif latest_run_status == "PARTIAL":
             st.warning(
                 f"Latest execution (Run ID {latest_run_id}) "
-                "completed partially. Check failed city extractions."
+                "completed partially. Check extraction results and data validation."
             )
 
         elif latest_run_status == "FAILED":

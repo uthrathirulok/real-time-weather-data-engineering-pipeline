@@ -98,6 +98,10 @@ def main():
             if total_records > 0 else 0
         )
 
+        # Mark the run as partial if no records passed validation
+        if len(valid_df) == 0 and weather_records:
+            status = "PARTIAL"
+
         # STEP 3: LOAD VALID RECORDS
         print("\nSTEP 3: LOADING VALID DATA INTO POSTGRESQL")
 

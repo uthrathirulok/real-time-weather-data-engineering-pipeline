@@ -9,7 +9,8 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
+
     volumes:
       - weather_db_data:/var/lib/postgresql/data
     healthcheck:
@@ -45,7 +46,7 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - weather_scheduler_logs:/app/logs  
+      - weather_scheduler_logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -56,7 +57,8 @@ services:
     restart: unless-stopped
     command: ["streamlit", "run", "dashboard/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
+
     environment:
       DB_HOST: db
       DB_PORT: 5432
