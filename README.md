@@ -541,6 +541,72 @@ docker compose exec -T db psql -U postgres -d weather_pipeline -t -A -c "SELECT 
 
 PostgreSQL data is stored in a Docker named volume (`weather_db_data`), allowing database records to persist when containers are stopped or recreated.
 
+
+### Automated Database Backup & Recovery
+
+The project includes an automated PostgreSQL backup system to protect pipeline data and support database recovery.
+
+#### Backup Features
+
+- Automated daily backups scheduled using Windows Task Scheduler.
+- PostgreSQL backups created using `pg_dump` in custom archive format.
+- Archive validation using `pg_restore`.
+- SHA-256 checksum verification to confirm backup integrity.
+- Backup files stored locally in the `backups/` directory.
+- Checksum files generated alongside each backup.
+- Temporary backup files inside the Docker container are cleaned up after execution.
+- Backup automation implemented in Python.
+
+#### Backup Schedule
+
+| Setting | Value |
+|---|---|
+| Frequency | Daily |
+| Scheduled Time | 9:00 AM |
+| Scheduler | Windows Task Scheduler |
+| Backup Format | PostgreSQL Custom (`-Fc`) |
+| Validation | `pg_restore -l` |
+| Integrity Verification | SHA-256 |
+
+#### Backup Location
+
+```text
+backups/
+├── weather_pipeline_<timestamp>.dump
+└── weather_pipeline_<timestamp>.sha256
+```
+
+The local `backups/` directory is excluded from Git to prevent database backup files from being uploaded to the repository.
+
+#### Backup Script
+
+The automated backup process is implemented in:
+
+```text
+scripts/backup_database.py
+```
+
+The script performs the following steps:
+
+1. Creates a PostgreSQL database dump inside the Docker container.
+2. Validates the backup archive.
+3. Copies the backup to the local Windows backup directory.
+4. Compares SHA-256 checksums between the container backup and local copy.
+5. Saves the checksum in a separate `.sha256` file.
+6. Cleans up temporary container backup files.
+7. Reports backup success or failure.
+
+#### Recovery Testing
+
+Backup recovery was tested by restoring the archive into a separate test database.
+
+- Restored database tables successfully.
+- Verified restored record counts.
+- Confirmed the original production database remained untouched.
+
+This verifies that the backup archive can be restored and that the recovery process works without affecting the live database.
+
+
 ### Stop Docker Services
 
 ```bash
@@ -548,7 +614,6 @@ docker compose down
 ```
 
 > Note: `docker compose down` stops and removes containers and the network, but preserves the database volume. Database data remains available when the services are started again.
-
 
 ## 👩‍💻 Author
 
