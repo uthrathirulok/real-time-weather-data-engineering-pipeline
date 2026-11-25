@@ -16,6 +16,53 @@ from src.logger import get_logger
 logger = get_logger()
 
 
+def calculate_data_freshness(weather_df):
+    """Calculate weather observation age and freshness status for each city."""
+
+    if weather_df.empty:
+        return weather_df.copy()
+
+    freshness_df = weather_df.copy()
+
+    freshness_df["observation_time"] = pd.to_datetime(
+        freshness_df["observation_time"],
+        errors="coerce"
+    )
+
+    # Interpret timestamps in Indian Standard Time
+    if freshness_df["observation_time"].dt.tz is None:
+        freshness_df["observation_time"] = (
+            freshness_df["observation_time"].dt.tz_localize("Asia/Kolkata")
+        )
+    else:
+        freshness_df["observation_time"] = (
+            freshness_df["observation_time"].dt.tz_convert("Asia/Kolkata")
+        )
+
+    now_ist = pd.Timestamp.now(tz="Asia/Kolkata")
+
+    freshness_df["age_minutes"] = (
+        now_ist - freshness_df["observation_time"]
+    ).dt.total_seconds() / 60
+
+    def get_freshness_status(age):
+        if pd.isna(age):
+            return "UNKNOWN"
+        elif age < 0:
+            return "CLOCK ISSUE"
+        elif age < 20:
+            return "FRESH"
+        elif age < 30:
+            return "DELAYED"
+        else:
+            return "STALE"
+
+    freshness_df["freshness_status"] = (
+        freshness_df["age_minutes"].apply(get_freshness_status)
+    )
+
+    return freshness_df
+
 def format_ist_timestamp(value, date_format="%d %b, %I:%M %p"):
     """Convert PostgreSQL timestamps to Indian Standard Time."""
 
@@ -411,6 +458,43 @@ try:
                 st.caption(
                     f"Observed: {row['observation_time']}"
                 )
+        # DATA FRESHNESS MONITORING
+        st.subheader("⏱️ Data Freshness Monitoring")
+
+        freshness_df = calculate_data_freshness(weather_df)
+
+        freshness_columns = st.columns(5)
+
+        for index, (_, row) in enumerate(freshness_df.iterrows()):
+
+            with freshness_columns[index % 5]:
+
+                st.markdown(f"**{row['city']}**")
+
+                status = row["freshness_status"]
+                age = row["age_minutes"]
+
+                if status == "FRESH":
+                    st.success("🟢 FRESH")
+
+                elif status == "DELAYED":
+                    st.warning("🟡 DELAYED")
+
+                elif status == "STALE":
+                    st.error("🔴 STALE")
+
+                elif status == "CLOCK ISSUE":
+                    st.error("⚠️ CLOCK ISSUE")
+
+                else:
+                    st.info("⚪ UNKNOWN")
+
+                if pd.notna(age):
+                    st.metric("Data Age", f"{age:.1f} minutes")
+                else:
+                    st.metric("Data Age", "Unavailable")
+
+                st.caption(f"Last observed: {row['observation_time']}")
 
 except Exception:
     logger.exception("Dashboard failed to retrieve weather data.")
