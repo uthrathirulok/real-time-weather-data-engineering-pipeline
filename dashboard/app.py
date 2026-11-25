@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 from src.database import get_database_engine
 from src.logger import get_logger
+from src.monitoring import evaluate_pipeline_alert
 
 logger = get_logger()
 
@@ -205,6 +206,7 @@ def get_pipeline_history():
             records_inserted,
             data_quality_score,
             status,
+            error_message,
             execution_duration_seconds
         FROM pipeline_runs
         ORDER BY started_at DESC
@@ -1103,7 +1105,60 @@ except Exception:
 # --------------------------------------------------
 
 st.divider()
+# Pipeline Failure Alerting
+st.divider()
+st.header("🚨 Pipeline Failure Alerts")
 
+try:
+    alert_history = get_pipeline_history()
+
+    if alert_history.empty:
+        alert_result = evaluate_pipeline_alert([])
+        st.info(alert_result["message"])
+
+    else:
+        recent_statuses = alert_history["status"].tolist()
+        alert_result = evaluate_pipeline_alert(recent_statuses)
+
+        alert_status = alert_result["alert_status"]
+        consecutive_failures = alert_result["consecutive_failures"]
+
+        if alert_status == "CRITICAL":
+            st.error(alert_result["message"])
+
+        elif alert_status == "FAILURE":
+            st.error(alert_result["message"])
+
+        elif alert_status == "WARNING":
+            st.warning(alert_result["message"])
+
+        elif alert_status == "RECOVERY":
+            st.success(alert_result["message"])
+
+        elif alert_status == "HEALTHY":
+            st.success(alert_result["message"])
+
+        else:
+            st.info(alert_result["message"])
+
+        st.metric("Consecutive Failures", consecutive_failures)
+
+        latest_run = alert_history.iloc[0]
+
+        if alert_status in ("CRITICAL", "FAILURE"):
+            error_message = latest_run.get("error_message")
+
+            if pd.notna(error_message) and str(error_message).strip():
+                st.caption("Latest error message:")
+                st.code(str(error_message))
+
+        if alert_status == "RECOVERY":
+            st.caption("The pipeline has recovered from a previous failure.")
+
+except Exception as e:
+    logger.exception("Pipeline failure alert panel error")
+    st.warning("Unable to retrieve pipeline failure alert status.")
+    
 st.header("📋 Pipeline Execution History")
 
 try:

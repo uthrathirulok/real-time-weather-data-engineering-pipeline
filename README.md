@@ -41,6 +41,7 @@ To build a reliable and automated weather data pipeline that:
 - **Duplicate Prevention:** Uses database constraints and conflict handling to avoid duplicate city observations.
 - **PostgreSQL Storage:** Stores weather observations, rejected records, and pipeline execution history.
 - **Pipeline Monitoring:** Tracks execution status, duration, extracted records, inserted records, and quality scores.
+- **Pipeline Failure Alerting:** Detects consecutive pipeline failures, identifies critical failure conditions, displays error messages, and detects pipeline recovery through dashboard alerts.
 - **Interactive Dashboard:** Displays weather conditions, historical analytics, rejected records, and pipeline health.
 - **Logging and Error Handling:** Records pipeline activities and errors for troubleshooting.
 - **Automated Startup:** Uses Windows Task Scheduler to start the pipeline after Windows sign-in.
@@ -386,18 +387,19 @@ The project uses **Pytest** to verify the reliability of its extraction, transfo
 
 ### Test Coverage
 
-The automated test suite contains 72 tests across seven test modules.
+The automated test suite contains **87 tests across eight test modules**.
 
 | Test Module | Tests | Coverage |
 |---|---:|---|
 | `test_database.py` | 10 | Database configuration, engine creation, and connection handling |
-| `test_extract_retries.py` | 5 | API retries, failed requests, and malformed responses |
-| `test_load.py` | 9 | Database loading, duplicate handling, and rejected records |
+| `test_extract_retries.py` | 8 | API retries, failed requests, and malformed responses |
+| `test_load.py` | 10 | Database loading, duplicate handling, and rejected records |
 | `test_logger.py` | 4 | Rotating file logging, console logging, and handler management |
-| `test_main.py` | 4 | Pipeline success, partial execution, and failure handling |
-| `test_monitoring.py` | 4 | Pipeline execution monitoring and database error handling |
+| `test_main.py` | 7 | Pipeline success, partial execution, and failure handling |
+| `test_monitoring.py` | 10 | Pipeline execution monitoring, database error handling, and failure alert evaluation |
+| `test_scheduler.py` | 2 | Automated scheduler behavior |
 | `test_transform.py` | 36 | Data validation, missing values, duplicates, numeric boundaries, and invalid values |
-| **Total** | **72** | |
+| **Total** | **87** | |
 
 ### Run Tests Locally
 
@@ -413,12 +415,12 @@ The latest verified automated test execution completed successfully.
 
 | Metric | Result |
 |---|---:|
-| Total Tests | 72 |
-| Passed | 72 |
+| Total Tests | 87 |
+| Passed | 87 |
 | Failed | 0 |
-| Execution Time | 3.56 seconds |
+| Execution Time | 5.67 seconds |
 
-**Test Status:** All 72 automated tests passed successfully.
+**Test Status:** All 87 automated tests passed successfully.
 
 ### Reliability Features
 
@@ -431,6 +433,7 @@ The latest verified automated test execution completed successfully.
 - Automated pipeline execution monitoring.
 - Data quality score calculation.
 - Scheduled execution using APScheduler.
+- Dashboard-based failure alerting with consecutive failure tracking, critical alerts, error visibility, and recovery detection.
 
 ## 📁 Project Structure
 
@@ -462,8 +465,9 @@ real-time-weather-data-engineering-pipeline/
 │   ├── test_load.py
 │   ├── test_logger.py
 │   ├── test_main.py
-│   ├── test_monitoring.py
-│   └── test_transform.py
+    │── test_monitoring.py
+    ├── test_scheduler.py
+    └── test_transform.py
 │
 ├── screenshots/
 │   ├── pipeline_health.png

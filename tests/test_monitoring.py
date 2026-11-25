@@ -117,3 +117,53 @@ def test_save_pipeline_run_with_partial_status(mock_get_engine):
     assert saved_parameters["records_inserted"] == 4
 
     mock_engine.dispose.assert_called_once()
+
+def test_pipeline_alert_healthy():
+    from src.monitoring import evaluate_pipeline_alert
+
+    result = evaluate_pipeline_alert(["SUCCESS", "SUCCESS"])
+
+    assert result["alert_status"] == "HEALTHY"
+    assert result["consecutive_failures"] == 0
+
+
+def test_pipeline_alert_single_failure():
+    from src.monitoring import evaluate_pipeline_alert
+
+    result = evaluate_pipeline_alert(["FAILED", "SUCCESS"])
+
+    assert result["alert_status"] == "FAILURE"
+    assert result["consecutive_failures"] == 1
+
+
+def test_pipeline_alert_critical_three_failures():
+    from src.monitoring import evaluate_pipeline_alert
+
+    result = evaluate_pipeline_alert(["FAILED", "FAILED", "FAILED"])
+
+    assert result["alert_status"] == "CRITICAL"
+    assert result["consecutive_failures"] == 3
+
+
+def test_pipeline_alert_partial():
+    from src.monitoring import evaluate_pipeline_alert
+
+    result = evaluate_pipeline_alert(["PARTIAL", "SUCCESS"])
+
+    assert result["alert_status"] == "WARNING"
+
+
+def test_pipeline_alert_recovery():
+    from src.monitoring import evaluate_pipeline_alert
+
+    result = evaluate_pipeline_alert(["SUCCESS", "FAILED"])
+
+    assert result["alert_status"] == "RECOVERY"
+
+
+def test_pipeline_alert_no_history():
+    from src.monitoring import evaluate_pipeline_alert
+
+    result = evaluate_pipeline_alert([])
+
+    assert result["alert_status"] == "UNKNOWN"

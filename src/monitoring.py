@@ -6,6 +6,73 @@ from src.logger import get_logger
 
 
 logger = get_logger()
+def evaluate_pipeline_alert(run_statuses):
+    """Evaluate recent pipeline run statuses and determine alert state."""
+
+    if not run_statuses:
+        return {
+            "alert_status": "UNKNOWN",
+            "consecutive_failures": 0,
+            "message": "No pipeline execution history available."
+        }
+
+    statuses = [status.upper() for status in run_statuses]
+
+    latest_status = statuses[0]
+
+    consecutive_failures = 0
+
+    for status in statuses:
+        if status == "FAILED":
+            consecutive_failures += 1
+        else:
+            break
+
+    if latest_status == "FAILED":
+
+        if consecutive_failures >= 3:
+            return {
+                "alert_status": "CRITICAL",
+                "consecutive_failures": consecutive_failures,
+                "message": (
+                    f"Critical alert: {consecutive_failures} "
+                    "consecutive pipeline failures."
+                )
+            }
+
+        return {
+            "alert_status": "FAILURE",
+            "consecutive_failures": consecutive_failures,
+            "message": "The latest pipeline execution failed."
+        }
+
+    elif latest_status == "PARTIAL":
+        return {
+            "alert_status": "WARNING",
+            "consecutive_failures": 0,
+            "message": "The latest pipeline execution was partial."
+        }
+
+    elif latest_status == "SUCCESS":
+
+        if len(statuses) > 1 and statuses[1] in ("FAILED", "PARTIAL"):
+            return {
+                "alert_status": "RECOVERY",
+                "consecutive_failures": 0,
+                "message": "Pipeline recovered. The latest execution succeeded."
+            }
+
+        return {
+            "alert_status": "HEALTHY",
+            "consecutive_failures": 0,
+            "message": "Pipeline is operating normally."
+        }
+
+    return {
+        "alert_status": "UNKNOWN",
+        "consecutive_failures": 0,
+        "message": f"Unrecognized pipeline status: {latest_status}"
+    }
 
 
 def save_pipeline_run(
