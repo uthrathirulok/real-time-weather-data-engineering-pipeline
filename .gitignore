@@ -32,3 +32,5 @@ Thumbs.db
 dashboard/app - Copy.py
 # Python 3.11 virtual environment
 .venv311/
+# Database backups (keep local, do not commit)
+backups/
