@@ -1099,6 +1099,152 @@ except Exception:
     logger.exception("Dashboard failed to retrieve pipeline analytics.")
     st.error("Unable to retrieve pipeline analytics. Please check the application logs.")
 
+# --------------------------------------------------
+# DAILY OPERATIONAL TRENDS
+# --------------------------------------------------
+
+st.divider()
+st.header("📊 Daily Operational Trends")
+
+try:
+    if "analytics_df" not in locals() or analytics_df.empty:
+        st.info("Daily operational trends will appear when pipeline run data is available.")
+
+    else:
+        daily_df = analytics_df.copy()
+
+        # Prepare numeric columns
+        metric_columns = [
+            "records_extracted",
+            "records_valid",
+            "records_rejected",
+            "records_inserted",
+        ]
+
+        for column in metric_columns:
+            daily_df[column] = (
+                pd.to_numeric(daily_df[column], errors="coerce")
+                .fillna(0)
+                .clip(lower=0)
+            )
+
+        daily_df["run_date"] = daily_df["started_at"].dt.date
+
+        # Aggregate metrics by day
+        daily_summary = (
+            daily_df.groupby("run_date")
+            .agg(
+                total_runs=("status", "count"),
+                successful_runs=(
+                    "status",
+                    lambda x: (x == "SUCCESS").sum()
+                ),
+                total_extracted=("records_extracted", "sum"),
+                total_rejected=("records_rejected", "sum"),
+                total_inserted=("records_inserted", "sum"),
+            )
+            .reset_index()
+            .sort_values("run_date")
+        )
+
+        # Calculate daily percentages
+        daily_summary["success_rate"] = (
+            daily_summary["successful_runs"]
+            / daily_summary["total_runs"]
+            * 100
+        )
+
+        daily_summary["rejection_rate"] = (
+            daily_summary["total_rejected"]
+            / daily_summary["total_extracted"].replace(0, float("nan"))
+            * 100
+        )
+
+        daily_summary["insertion_efficiency"] = (
+            daily_summary["total_inserted"]
+            / daily_summary["total_extracted"].replace(0, float("nan"))
+            * 100
+        )
+
+        # Daily Success Rate
+        st.subheader("Daily Pipeline Success Rate")
+
+        success_chart = alt.Chart(daily_summary).mark_line(
+            point=True
+        ).encode(
+            x=alt.X("run_date:T", title="Date"),
+            y=alt.Y(
+                "success_rate:Q",
+                title="Success Rate (%)",
+                scale=alt.Scale(domain=[0, 100])
+            ),
+            tooltip=[
+                alt.Tooltip("run_date:T", title="Date"),
+                alt.Tooltip("total_runs:Q", title="Total Runs"),
+                alt.Tooltip("successful_runs:Q", title="Successful Runs"),
+                alt.Tooltip("success_rate:Q", title="Success Rate", format=".2f")
+            ]
+        ).properties(height=300)
+
+        st.altair_chart(success_chart, use_container_width=True)
+
+        # Daily Rejection Rate
+        st.subheader("Daily Data Rejection Rate")
+
+        rejection_chart = alt.Chart(
+            daily_summary.dropna(subset=["rejection_rate"])
+        ).mark_line(
+            point=True
+        ).encode(
+            x=alt.X("run_date:T", title="Date"),
+            y=alt.Y("rejection_rate:Q", title="Rejection Rate (%)"),
+            tooltip=[
+                alt.Tooltip("run_date:T", title="Date"),
+                alt.Tooltip("total_extracted:Q", title="Extracted"),
+                alt.Tooltip("total_rejected:Q", title="Rejected"),
+                alt.Tooltip("rejection_rate:Q", title="Rejection Rate", format=".2f")
+            ]
+        ).properties(height=300)
+
+        st.altair_chart(rejection_chart, use_container_width=True)
+
+        # Daily Insertion Efficiency
+        st.subheader("Daily Database Insertion Efficiency")
+
+        insertion_chart = alt.Chart(
+            daily_summary.dropna(subset=["insertion_efficiency"])
+        ).mark_line(
+            point=True
+        ).encode(
+            x=alt.X("run_date:T", title="Date"),
+            y=alt.Y(
+                "insertion_efficiency:Q",
+                title="Insertion Efficiency (%)"
+            ),
+            tooltip=[
+                alt.Tooltip("run_date:T", title="Date"),
+                alt.Tooltip("total_extracted:Q", title="Extracted"),
+                alt.Tooltip("total_inserted:Q", title="Inserted"),
+                alt.Tooltip(
+                    "insertion_efficiency:Q",
+                    title="Insertion Efficiency",
+                    format=".2f"
+                )
+            ]
+        ).properties(height=300)
+
+        st.altair_chart(insertion_chart, use_container_width=True)
+
+        st.caption(
+            "Daily metrics are calculated from the latest 500 pipeline runs. "
+            "Success rate measures successful executions, rejection rate measures "
+            "rejected records against extracted records, and insertion efficiency "
+            "measures inserted records against extracted records."
+        )
+
+except Exception:
+    logger.exception("Dashboard failed to calculate daily operational trends.")
+    st.error("Unable to calculate daily operational trends. Please check the application logs.")
 
 # --------------------------------------------------
 # PIPELINE EXECUTION HISTORY
