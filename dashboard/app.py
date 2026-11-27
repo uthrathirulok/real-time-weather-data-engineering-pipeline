@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_DIR))
 from src.database import get_database_engine
 from src.logger import get_logger
 from src.monitoring import evaluate_pipeline_alert
+from src.anomaly_detection import load_anomaly_rules, detect_anomalies
 
 logger = get_logger()
 
@@ -1245,6 +1246,202 @@ try:
 except Exception:
     logger.exception("Dashboard failed to calculate daily operational trends.")
     st.error("Unable to calculate daily operational trends. Please check the application logs.")
+# --------------------------------------------------
+# ANOMALY DETECTION & SMART MONITORING
+# --------------------------------------------------
+
+st.divider()
+st.header("🔎 Anomaly Detection & Smart Monitoring")
+
+try:
+    anomaly_df = get_pipeline_analytics()
+
+    if anomaly_df.empty:
+        st.info("No pipeline execution data available for anomaly detection.")
+
+    else:
+        # Get the latest pipeline execution
+        latest_anomaly_run = anomaly_df.sort_values(
+            "id",
+            ascending=False
+        ).iloc[0]
+
+        # Safely convert database values to numbers
+        def get_numeric_metric(column):
+            value = latest_anomaly_run.get(column)
+
+            if value is None or pd.isna(value):
+                return None
+
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        extracted = get_numeric_metric("records_extracted")
+        rejected = get_numeric_metric("records_rejected")
+        inserted = get_numeric_metric("records_inserted")
+
+        # Calculate rejection rate and insertion efficiency
+        if extracted is not None and extracted > 0:
+            rejection_rate = (
+                (rejected / extracted) * 100
+                if rejected is not None
+                else None
+            )
+
+            insertion_efficiency = (
+                (inserted / extracted) * 100
+                if inserted is not None
+                else None
+            )
+        else:
+            rejection_rate = None
+            insertion_efficiency = None
+
+        # Prepare metrics for the anomaly detection engine
+        anomaly_metrics = {
+            "data_quality_score": get_numeric_metric(
+                "data_quality_score"
+            ),
+            "execution_duration_seconds": get_numeric_metric(
+                "execution_duration_seconds"
+            ),
+            "records_extracted": extracted,
+            "rejection_rate_percent": rejection_rate,
+            "insertion_efficiency_percent": insertion_efficiency
+        }
+
+        # Load configured rules and evaluate anomalies
+        anomaly_config = load_anomaly_rules()
+
+        anomaly_result = detect_anomalies(
+            anomaly_metrics,
+            anomaly_config
+        )
+
+        overall_status = anomaly_result["overall_status"]
+        anomaly_count = anomaly_result["anomaly_count"]
+
+        # Display overall monitoring status
+        if overall_status == "CRITICAL":
+            st.error(
+                f"🔴 CRITICAL — {anomaly_count} anomaly/anomalies detected"
+            )
+
+        elif overall_status == "WARNING":
+            st.warning(
+                f"🟡 WARNING — {anomaly_count} anomaly/anomalies detected"
+            )
+
+        elif overall_status == "DISABLED":
+            st.info("Anomaly detection is globally disabled in configuration.")
+
+        else:
+            st.success("🟢 NORMAL — All monitored metrics are within thresholds.")
+
+        # Display latest run information
+        st.caption(
+            f"Monitoring latest pipeline run ID: "
+            f"{int(latest_anomaly_run['id'])}"
+        )
+
+        # Display metric values
+        st.subheader("Latest Run Metrics")
+
+        metric_columns = st.columns(5)
+
+        metric_display = [
+            (
+                "Data Quality",
+                anomaly_metrics["data_quality_score"],
+                "%"
+            ),
+            (
+                "Execution Duration",
+                anomaly_metrics["execution_duration_seconds"],
+                " sec"
+            ),
+            (
+                "Records Extracted",
+                anomaly_metrics["records_extracted"],
+                ""
+            ),
+            (
+                "Rejection Rate",
+                anomaly_metrics["rejection_rate_percent"],
+                "%"
+            ),
+            (
+                "Insertion Efficiency",
+                anomaly_metrics["insertion_efficiency_percent"],
+                "%"
+            )
+        ]
+
+        for column, (label, value, suffix) in zip(
+            metric_columns,
+            metric_display
+        ):
+            with column:
+                if value is None:
+                    display_value = "N/A"
+                elif label == "Execution Duration":
+                    display_value = f"{value:.2f}{suffix}"
+                elif label == "Records Extracted":
+                    display_value = f"{int(value)}"
+                else:
+                    display_value = f"{value:.2f}{suffix}"
+
+                st.metric(label, display_value)
+
+        # Display individual metric severity and explanations
+        st.subheader("Anomaly Detection Results")
+
+        results_df = pd.DataFrame(
+            anomaly_result["results"]
+        )
+
+        if not results_df.empty:
+            st.dataframe(
+                results_df,
+                hide_index=True,
+                use_container_width=True
+            )
+
+        # Show explanations for detected anomalies
+        detected_anomalies = [
+            result
+            for result in anomaly_result["results"]
+            if result["severity"] in ("WARNING", "CRITICAL")
+        ]
+
+        if detected_anomalies:
+            st.subheader("⚠️ Anomaly Explanations")
+
+            for anomaly in detected_anomalies:
+                if anomaly["severity"] == "CRITICAL":
+                    st.error(anomaly["message"])
+                else:
+                    st.warning(anomaly["message"])
+
+        elif overall_status == "NORMAL":
+            st.caption(
+                "No anomalies detected in the latest pipeline execution."
+            )
+
+        st.caption(
+            "Anomaly detection uses configurable thresholds from "
+            "config/anomaly_rules.json and evaluates the latest pipeline run. "
+            "It is read-only and does not trigger pipeline executions."
+        )
+
+except Exception:
+    logger.exception("Dashboard anomaly detection failed.")
+    st.error(
+        "Unable to evaluate pipeline anomalies. "
+        "Please check the application logs."
+    )
 
 # --------------------------------------------------
 # PIPELINE EXECUTION HISTORY
